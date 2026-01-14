@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Bloom & Do: Atmospheric Edition</title>
+    <style>
+        :root {
+            --dirt: #795548;
+            --sky: #e0f7fa;
+            --danger: #d63031;
+            --grass: #8fbc8f;
+        }
+
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background-color: var(--sky);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow-x: hidden;
+        }
+
+        #garden-container {
+            width: 90%;
+            max-width: 600px;
+            height: 300px;
+            background-color: var(--grass);
+            border-bottom: 15px solid var(--dirt);
+            border-radius: 20px 20px 0 0;
+            margin-top: 50px;
+            position: relative;
+            overflow: hidden;
+            transition: background-color 2s ease;
+        }
+
+        /* Particle/Weather Styles */
+        .particle {
+            position: absolute;
+            top: -20px;
+            pointer-events: none;
+            animation: fall linear forwards;
+        }
+
+        @keyframes fall {
+            to { transform: translateY(320px) rotate(360deg); }
+        }
+
+        .plant, .pest, .gnome {
+            position: absolute;
+            font-size: 2.2rem;
+            bottom: 10px;
+            transition: all 0.5s ease-in-out;
+            z-index: 2;
+        }
+
+        .gnome { font-size: 1.8rem; filter: drop-shadow(0 0 5px gold); }
+        .pest { animation: bounce 1s infinite alternate; }
+
+        @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-10px); } }
+
+        #ui-container {
+            background: white;
+            padding: 20px;
+            border-radius: 0 0 20px 20px;
+            width: 90%;
+            max-width: 600px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+        }
+
+        .controls { display: flex; gap: 10px; margin-bottom: 15px; }
+        input { flex-grow: 1; padding: 12px; border: 2px solid #ddd; border-radius: 8px; }
+        button { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
+        #add-btn { background: #4CAF50; color: white; }
+        
+        #task-list { list-style: none; padding: 0; }
+        .task-item { display: flex; justify-content: space-between; align-items: center; padding: 12px; border-bottom: 1px solid #eee; }
+        .overdue { background-color: #fff3f3; color: var(--danger); border-left: 5px solid var(--danger); }
+        .complete-btn { background: #eee; border-radius: 50%; width: 35px; height: 35px; }
+    </style>
+</head>
+<body>
+
+    <div id="garden-container"></div>
+
+    <div id="ui-container">
+        <div class="controls">
+            <input type="text" id="task-input" placeholder="Plant a task...">
+            <button id="add-btn">Add Seed</button>
+        </div>
+        <ul id="task-list"></ul>
+    </div>
+
+    <script>
+        const garden = document.getElementById('garden-container');
+        const taskInput = document.getElementById('task-input');
+        const addBtn = document.getElementById('add-btn');
+        const taskList = document.getElementById('task-list');
+
+        // Audio Context Setup (Web Audio API)
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        function playTone(freq, type, duration) {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
+        }
+
+        const sounds = {
+            success: () => { playTone(523.25, 'sine', 0.5); setTimeout(() => playTone(659.25, 'sine', 0.5), 100); },
+            crunch: () => { playTone(150, 'sawtooth', 0.2); playTone(100, 'sawtooth', 0.2); }
+        };
+
+        const flora = ['🌸', '🌻', '🌷', '🌿', '🌹', '🌼'];
+        const fauna = ['🐌', '🐇', '🐛', '🐀', '🦗'];
+
+        let tasks = [];
+        const OVERDUE_TIME = 24 * 60 * 60 * 1000; 
+        const HARD_MODE_TIME = 72 * 60 * 60 * 1000;
+
+        window.onload = () => {
+            const month = new Date().getMonth();
+            setSeason(month);
+            startWeather(month);
+            renderGarden();
+        };
+
+        function setSeason(month) {
+            const colors = ["#dff9fb", "#dff9fb", "#9be15d", "#9be15d", "#9be15d", "#2ecc71", "#2ecc71", "#2ecc71", "#e67e22", "#e67e22", "#e67e22", "#dff9fb"];
+            garden.style.backgroundColor = colors[month];
+        }
+
+        function startWeather(month) {
+            const particles = ["❄️", "❄️", "🌸", "🌸", "🌸", "☀️", "☀️", "💧", "🍂", "🍂", "🍂", "❄️"];
+            const p = particles[month];
+            setInterval(() => {
+                const el = document.createElement('div');
+                el.className = 'particle';
+                el.innerText = p;
+                el.style.left = Math.random() * 100 + '%';
+                el.style.duration = (Math.random() * 3 + 2) + 's';
+                garden.appendChild(el);
+                setTimeout(() => el.remove(), 5000);
+            }, 1000);
+        }
+
+        function renderGarden() {
+            garden.querySelectorAll('.plant, .gnome').forEach(e => e.remove());
+            const data = JSON.parse(localStorage.getItem('myGardenData') || '{"plants":[], "gnomes":[]}');
+            data.plants.forEach(p => createVisual(p.emoji, p.left, 'plant'));
+            data.gnomes.forEach(g => createVisual('🧙‍♂️', g.left, 'gnome'));
+        }
+
+        function createVisual(emoji, left, className) {
+            const el = document.createElement('div');
+            el.className = className;
+            el.innerText = emoji;
+            el.style.left = left + '%';
+            garden.appendChild(el);
+            return el;
+        }
+
+        function pestAttack() {
+            let data = JSON.parse(localStorage.getItem('myGardenData') || '{"plants":[], "gnomes":[]}');
+            if (data.gnomes.length > 0) {
+                data.gnomes.pop();
+            } else if (data.plants.length > 0) {
+                data.plants.splice(Math.floor(Math.random() * data.plants.length), 1);
+                sounds.crunch();
+            }
+            localStorage.setItem('myGardenData', JSON.stringify(data));
+            renderGarden();
+        }
+
+        function checkPests() {
+            const now = Date.now();
+            tasks.forEach(task => {
+                if (now - task.createdAt > OVERDUE_TIME && !task.hasPest) {
+                    task.pestElement = createVisual(fauna[Math.floor(Math.random() * fauna.length)], Math.random() * 90, 'pest');
+                    task.hasPest = true;
+                    task.element.classList.add('overdue');
+                }
+                if (now - task.createdAt > HARD_MODE_TIME) {
+                    pestAttack();
+                    task.createdAt = now - (HARD_MODE_TIME - 10000); 
+                }
+            });
+        }
+
+        setInterval(checkPests, 3000);
+
+        addBtn.addEventListener('click', () => {
+            if (taskInput.value === '') return;
+            const taskId = Date.now();
+            const li = document.createElement('li');
+            li.className = 'task-item';
+            li.innerHTML = `<span>${taskInput.value}</span><button class="complete-btn">✓</button>`;
+            
+            const taskObj = { id: taskId, createdAt: Date.now(), element: li, hasPest: false };
+
+            li.querySelector('.complete-btn').addEventListener('click', () => {
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                if (taskObj.pestElement) taskObj.pestElement.remove();
+                
+                let data = JSON.parse(localStorage.getItem('myGardenData') || '{"plants":[], "gnomes":[]}');
+                data.plants.push({ emoji: flora[Math.floor(Math.random() * flora.length)], left: Math.random() * 90 });
+                
+                if (Date.now() - taskObj.createdAt < 3600000) data.gnomes.push({ left: Math.random() * 90 });
+
+                localStorage.setItem('myGardenData', JSON.stringify(data));
+                sounds.success();
+                renderGarden();
+                li.remove();
+                tasks = tasks.filter(t => t.id !== taskId);
+            });
+
+            taskList.appendChild(li);
+            tasks.push(taskObj);
+            taskInput.value = '';
+        });
+    </script>
+</body>
+</html>
